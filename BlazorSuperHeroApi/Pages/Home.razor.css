@@ -1,0 +1,27 @@
+.hero-list-scroll {
+    max-height: 68vh;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+}
+
+.hero-card {
+    cursor: pointer;
+    transition: transform 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.hero-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+}
+
+.hero-card-img-wrapper {
+    height: 260px;
+    overflow: hidden;
+}
+
+.hero-card-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top;
+}

@@ -1,0 +1,565 @@
+@page "/"
+@implements IDisposable
+@inject HttpClient Http
+
+<PageTitle>SuperHero API</PageTitle>
+
+<div class="container py-4">
+    <div class="mb-4">
+        <h1 class="display-6 fw-bold">SuperHero API</h1>
+        <p class="text-muted mb-0">Explore os super-heróis em sequência de ID ou pesquise pelo nome. Clique em um card para abrir o modal com detalhes completos.</p>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form @onsubmit="SearchHeroesAsync" @onsubmit:preventDefault>
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-8">
+                        <label for="searchTerm" class="form-label fw-semibold">Nome do Personagem</label>
+                        <input id="searchTerm"
+                               type="text"
+                               class="form-control"
+                               placeholder="Ex.: batman, superman, spider-man"
+                               @bind="searchTerm"
+                               @bind:event="oninput" />
+                    </div>
+                    <div class="col-md-2 d-grid">
+                        <button type="submit" class="btn btn-primary" disabled="@isLoading">
+                            @if (isLoading && isSearchMode)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                <span>Buscando...</span>
+                            }
+                            else
+                            {
+                                <span>Buscar</span>
+                            }
+                        </button>
+                    </div>
+                    <div class="col-md-2 d-grid">
+                        <button type="button"
+                                class="btn btn-outline-secondary"
+                                disabled="@isLoading"
+                                @onclick="LoadInitialHeroesByIdAsync">
+                            IDs 1–20
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">
+            <strong>Erro:</strong> @errorMessage
+        </div>
+    }
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary mb-3" role="status"></div>
+            <p class="text-muted mb-0">Carregando personagens da SuperHero API...</p>
+        </div>
+    }
+    else if (heroes.Count > 0)
+    {
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <div>
+                @if (isSearchMode)
+                {
+                    <h2 class="h5 mb-0">
+                        Resultados para <span class="text-primary">"@activeQueryTitle"</span>
+                    </h2>
+                }
+                else
+                {
+                    <h2 class="h5 mb-0">
+                        Primeiros personagens por ordem de ID <span class="text-primary">(IDs 1 a @(TotalItems))</span>
+                    </h2>
+                }
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-primary">Página @currentPage de @TotalPages</span>
+                <span class="badge bg-secondary">@TotalItems personagem(ns)</span>
+            </div>
+        </div>
+
+        <div class="hero-list-scroll p-3 bg-body-tertiary rounded-3 border mb-3">
+            <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-4">
+                @foreach (var hero in PagedHeroes)
+                {
+                    <div class="col">
+                        <div class="card h-100 shadow-sm hero-card"
+                             role="button"
+                             tabindex="0"
+                             @onclick="() => OpenHeroModal(hero)">
+                            <div class="hero-card-img-wrapper bg-light">
+                                <img src="@GetPrimaryImageUrl(hero)"
+                                     alt="@hero.Name"
+                                     referrerpolicy="no-referrer"
+                                     onerror="@GetImageOnErrorScript(hero)"
+                                     class="card-img-top hero-card-img" />
+                            </div>
+                            <div class="card-body d-flex flex-column">
+                                <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+                                    <h3 class="h6 card-title fw-bold mb-0">@hero.Name</h3>
+                                    <span class="badge @GetAlignmentBadgeClass(hero.Biography.Alignment)">
+                                        @FormatValue(hero.Biography.Alignment)
+                                    </span>
+                                </div>
+                                <p class="card-text text-muted small mb-2">
+                                    @FormatValue(hero.Biography.FullName)
+                                </p>
+                                <div class="mt-auto d-flex justify-content-between align-items-center small text-muted pt-2 border-top">
+                                    <span class="text-truncate me-2">@FormatValue(hero.Biography.Publisher)</span>
+                                    <span class="fw-semibold text-nowrap">ID: @hero.Id</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <nav aria-label="Paginação de personagens" class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <small class="text-muted">
+                Exibindo @PagedHeroes.Count() de @TotalItems personagem(ns) (@CardsPerPage por página)
+            </small>
+            <ul class="pagination mb-0">
+                <li class="page-item @(currentPage <= 1 ? "disabled" : "")">
+                    <button type="button" class="page-link" @onclick="PreviousPage" disabled="@(currentPage <= 1)">
+                        Anterior
+                    </button>
+                </li>
+
+                @for (var pageNumber = 1; pageNumber <= TotalPages; pageNumber++)
+                {
+                    var targetPage = pageNumber;
+                    <li class="page-item @(currentPage == targetPage ? "active" : "")">
+                        <button type="button" class="page-link" @onclick="() => GoToPage(targetPage)">
+                            @targetPage
+                        </button>
+                    </li>
+                }
+
+                <li class="page-item @(currentPage >= TotalPages ? "disabled" : "")">
+                    <button type="button" class="page-link" @onclick="NextPage" disabled="@(currentPage >= TotalPages)">
+                        Próxima
+                    </button>
+                </li>
+            </ul>
+        </nav>
+    }
+    else if (string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-info">Nenhum personagem encontrado.</div>
+    }
+</div>
+
+@if (selectedHero is not null)
+{
+    <div class="modal-backdrop fade show" @onclick="CloseHeroModal"></div>
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" aria-modal="true" @onclick="CloseHeroModal">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable" @onclick:stopPropagation>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title h4 mb-0">@selectedHero.Name</h2>
+                        <small class="text-muted">
+                            @FormatValue(selectedHero.Biography.FullName) · ID: @selectedHero.Id
+                        </small>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge @GetAlignmentBadgeClass(selectedHero.Biography.Alignment)">
+                            @FormatValue(selectedHero.Biography.Alignment)
+                        </span>
+                        <button type="button" class="btn-close" aria-label="Fechar" @onclick="CloseHeroModal"></button>
+                    </div>
+                </div>
+
+                <div class="modal-body">
+                    <div class="row g-4 mb-4">
+                        <div class="col-md-4 text-center">
+                            <img src="@GetPrimaryImageUrl(selectedHero)"
+                                 alt="@selectedHero.Name"
+                                 referrerpolicy="no-referrer"
+                                 onerror="@GetImageOnErrorScript(selectedHero)"
+                                 class="img-fluid rounded shadow-sm w-100"
+                                 style="max-height: 340px; object-fit: cover;" />
+                        </div>
+
+                        <div class="col-md-8">
+                            <h3 class="h6 text-uppercase text-muted mb-3">Powerstats</h3>
+                            @foreach (var stat in GetPowerStats(selectedHero.Powerstats))
+                            {
+                                var percent = PowerStats.ParseStat(stat.Value);
+                                <div class="mb-2">
+                                    <div class="d-flex justify-content-between small mb-1">
+                                        <span>@stat.Label</span>
+                                        <span class="fw-semibold">@FormatValue(stat.Value)</span>
+                                    </div>
+                                    <div class="progress" style="height: 8px;">
+                                        <div class="progress-bar"
+                                             role="progressbar"
+                                             style="width: @percent%"
+                                             aria-valuenow="@percent"
+                                             aria-valuemin="0"
+                                             aria-valuemax="100">
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="row g-3 small">
+                        <div class="col-md-6">
+                            <div class="p-3 bg-light rounded h-100">
+                                <h3 class="h6 text-uppercase text-muted mb-2">Biografia</h3>
+                                <p class="mb-1"><strong>Nome completo:</strong> @FormatValue(selectedHero.Biography.FullName)</p>
+                                <p class="mb-1"><strong>Editora:</strong> @FormatValue(selectedHero.Biography.Publisher)</p>
+                                <p class="mb-1"><strong>Alter-egos:</strong> @FormatValue(selectedHero.Biography.AlterEgos)</p>
+                                <p class="mb-1"><strong>Apelidos:</strong> @FormatList(selectedHero.Biography.Aliases)</p>
+                                <p class="mb-1"><strong>Local de nascimento:</strong> @FormatValue(selectedHero.Biography.PlaceOfBirth)</p>
+                                <p class="mb-0"><strong>Primeira aparição:</strong> @FormatValue(selectedHero.Biography.FirstAppearance)</p>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="p-3 bg-light rounded h-100">
+                                <h3 class="h6 text-uppercase text-muted mb-2">Aparência</h3>
+                                <p class="mb-1"><strong>Gênero:</strong> @FormatValue(selectedHero.Appearance.Gender)</p>
+                                <p class="mb-1"><strong>Raça:</strong> @FormatValue(selectedHero.Appearance.Race)</p>
+                                <p class="mb-1"><strong>Altura:</strong> @FormatList(selectedHero.Appearance.Height)</p>
+                                <p class="mb-1"><strong>Peso:</strong> @FormatList(selectedHero.Appearance.Weight)</p>
+                                <p class="mb-1"><strong>Cor dos olhos:</strong> @FormatValue(selectedHero.Appearance.EyeColor)</p>
+                                <p class="mb-0"><strong>Cor do cabelo:</strong> @FormatValue(selectedHero.Appearance.HairColor)</p>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="p-3 bg-light rounded h-100">
+                                <h3 class="h6 text-uppercase text-muted mb-2">Trabalho</h3>
+                                <p class="mb-1"><strong>Ocupação:</strong> @FormatValue(selectedHero.Work.Occupation)</p>
+                                <p class="mb-0"><strong>Base:</strong> @FormatValue(selectedHero.Work.Base)</p>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="p-3 bg-light rounded h-100">
+                                <h3 class="h6 text-uppercase text-muted mb-2">Conexões</h3>
+                                <p class="mb-1"><strong>Afiliações:</strong> @FormatValue(selectedHero.Connections.GroupAffiliation)</p>
+                                <p class="mb-0"><strong>Parentes:</strong> @FormatValue(selectedHero.Connections.Relatives)</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseHeroModal">Fechar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private const string ApiBaseUrl = "https://superheroapi.com/api";
+    private const int CardsPerPage = 4;
+    private const int MaxPages = 5;
+    private const int MaxInitialHeroes = CardsPerPage * MaxPages; // 20 personagens (IDs 1 a 20)
+
+    private string searchTerm = string.Empty;
+    private string activeQueryTitle = string.Empty;
+    private bool isLoading;
+    private bool isSearchMode;
+    private string? errorMessage;
+    private List<SuperHero> heroes = [];
+    private int currentPage = 1;
+    private SuperHero? selectedHero;
+    private CancellationTokenSource? requestCts;
+
+    private int TotalItems => Math.Min(heroes.Count, MaxInitialHeroes);
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(TotalItems / (double)CardsPerPage));
+
+    private IEnumerable<SuperHero> PagedHeroes =>
+        heroes
+            .Take(MaxInitialHeroes)
+            .Skip((currentPage - 1) * CardsPerPage)
+            .Take(CardsPerPage);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadInitialHeroesByIdAsync();
+    }
+
+    private async Task LoadInitialHeroesByIdAsync()
+    {
+        errorMessage = null;
+        selectedHero = null;
+        isSearchMode = false;
+        searchTerm = string.Empty;
+        currentPage = 1;
+
+        var token = GetConfiguredToken();
+        if (token is null)
+        {
+            return;
+        }
+
+        var cts = ResetCancellationTokenSource();
+        isLoading = true;
+        heroes = [];
+
+        try
+        {
+            var encodedToken = Uri.EscapeDataString(token);
+            var ids = Enumerable.Range(1, MaxInitialHeroes);
+
+            var tasks = ids.Select(id => FetchHeroByIdAsync(encodedToken, id, cts.Token));
+            var results = await Task.WhenAll(tasks);
+
+            heroes = results
+                .Where(h => h is not null && !string.IsNullOrWhiteSpace(h.Id))
+                .Select(h => h!)
+                .OrderBy(h => int.TryParse(h.Id, out var numericId) ? numericId : int.MaxValue)
+                .ToList();
+
+            if (heroes.Count == 0)
+            {
+                errorMessage = "Não foi possível carregar os personagens iniciais da SuperHero API.";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Requisição cancelada.
+        }
+        catch (HttpRequestException ex)
+        {
+            errorMessage = $"Falha ao consultar a SuperHero API: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Erro inesperado ao carregar personagens iniciais: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task<SuperHero?> FetchHeroByIdAsync(string encodedToken, int id, CancellationToken ct)
+    {
+        var url = $"{ApiBaseUrl}/{encodedToken}/{id}";
+        using var response = await Http.GetAsync(url, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        return await response.Content.ReadFromJsonAsync<SuperHero>(cancellationToken: ct);
+    }
+
+    private async Task SearchHeroesAsync()
+    {
+        errorMessage = null;
+        selectedHero = null;
+
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            await LoadInitialHeroesByIdAsync();
+            return;
+        }
+
+        var token = GetConfiguredToken();
+        if (token is null)
+        {
+            return;
+        }
+
+        var cts = ResetCancellationTokenSource();
+        isLoading = true;
+        isSearchMode = true;
+        currentPage = 1;
+        heroes = [];
+
+        try
+        {
+            var trimmedQuery = searchTerm.Trim();
+            activeQueryTitle = trimmedQuery;
+
+            var encodedToken = Uri.EscapeDataString(token);
+            var encodedName = Uri.EscapeDataString(trimmedQuery);
+            var url = $"{ApiBaseUrl}/{encodedToken}/search/{encodedName}";
+
+            using var httpResponse = await Http.GetAsync(url, cts.Token);
+            var response = await httpResponse.Content.ReadFromJsonAsync<SuperHeroSearchResponse>(cancellationToken: cts.Token);
+
+            if (response is null)
+            {
+                errorMessage = $"A API retornou uma resposta vazia (HTTP {(int)httpResponse.StatusCode}).";
+                return;
+            }
+
+            if (!httpResponse.IsSuccessStatusCode || !response.IsSuccess)
+            {
+                errorMessage = string.IsNullOrWhiteSpace(response.Error)
+                    ? $"Não foi possível encontrar resultados para a busca (HTTP {(int)httpResponse.StatusCode})."
+                    : response.Error;
+                return;
+            }
+
+            heroes = response.Results
+                .OrderBy(h => int.TryParse(h.Id, out var numericId) ? numericId : int.MaxValue)
+                .Take(MaxInitialHeroes)
+                .ToList();
+        }
+        catch (OperationCanceledException)
+        {
+            // Requisição cancelada por uma nova busca ou ao sair da página.
+        }
+        catch (HttpRequestException ex)
+        {
+            errorMessage = $"Falha ao consultar a SuperHero API: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Erro inesperado ao processar os dados: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private string? GetConfiguredToken()
+    {
+        var token = Environment.GetEnvironmentVariable("SUPERHERO_API_TOKEN")?.Trim();
+        if (string.IsNullOrWhiteSpace(token) || token == "seu_access_token_aqui")
+        {
+            errorMessage = "Token não configurado. Preencha SUPERHERO_API_TOKEN no arquivo .env e reinicie a aplicação.";
+            return null;
+        }
+
+        return token;
+    }
+
+    private CancellationTokenSource ResetCancellationTokenSource()
+    {
+        requestCts?.Cancel();
+        requestCts?.Dispose();
+        requestCts = new CancellationTokenSource();
+        return requestCts;
+    }
+
+    private void GoToPage(int pageNumber)
+    {
+        currentPage = Math.Clamp(pageNumber, 1, TotalPages);
+    }
+
+    private void PreviousPage()
+    {
+        if (currentPage > 1)
+        {
+            currentPage--;
+        }
+    }
+
+    private void NextPage()
+    {
+        if (currentPage < TotalPages)
+        {
+            currentPage++;
+        }
+    }
+
+    private void OpenHeroModal(SuperHero hero) => selectedHero = hero;
+
+    private void CloseHeroModal() => selectedHero = null;
+
+    private static string GetPrimaryImageUrl(SuperHero hero)
+    {
+        if (!string.IsNullOrWhiteSpace(hero.Id) && !string.IsNullOrWhiteSpace(hero.Name))
+        {
+            var slug = GetHeroSlug(hero.Name);
+            return $"https://cdn.jsdelivr.net/gh/akabab/superhero-api@0.3.0/api/images/lg/{hero.Id}-{slug}.jpg";
+        }
+
+        return !string.IsNullOrWhiteSpace(hero.Image.Url)
+            ? hero.Image.Url
+            : GetPlaceholderSvgDataUri(hero.Name);
+    }
+
+    private static string GetImageOnErrorScript(SuperHero hero)
+    {
+        var placeholder = GetPlaceholderSvgDataUri(hero.Name);
+        if (!string.IsNullOrWhiteSpace(hero.Image.Url))
+        {
+            var safeOriginalUrl = hero.Image.Url.Replace("'", "\\'");
+            return $"if (this.dataset.triedOriginal !== '1') {{ this.dataset.triedOriginal = '1'; this.src = '{safeOriginalUrl}'; }} else {{ this.onerror = null; this.src = '{placeholder}'; }}";
+        }
+
+        return $"this.onerror = null; this.src = '{placeholder}';";
+    }
+
+    private static string GetHeroSlug(string name)
+    {
+        var chars = name.ToLowerInvariant()
+            .Select(c => char.IsLetterOrDigit(c) ? c : '-')
+            .ToArray();
+
+        var slug = new string(chars);
+        while (slug.Contains("--", StringComparison.Ordinal))
+        {
+            slug = slug.Replace("--", "-", StringComparison.Ordinal);
+        }
+
+        return slug.Trim('-');
+    }
+
+    private static string GetPlaceholderSvgDataUri(string? heroName)
+    {
+        var safeName = System.Net.WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(heroName) ? "SuperHero" : heroName);
+        var svg = $"<svg xmlns='http://www.w3.org/2000/svg' width='400' height='500' viewBox='0 0 400 500'>" +
+                  "<rect width='100%' height='100%' fill='#212529'/>" +
+                  $"<text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='#adb5bd' font-family='sans-serif' font-size='24' font-weight='bold'>{safeName}</text>" +
+                  "</svg>";
+        return $"data:image/svg+xml;utf8,{Uri.EscapeDataString(svg)}";
+    }
+
+    private static IEnumerable<(string Label, string Value)> GetPowerStats(PowerStats stats)
+    {
+        yield return ("Inteligência", stats.Intelligence);
+        yield return ("Força", stats.Strength);
+        yield return ("Velocidade", stats.Speed);
+        yield return ("Durabilidade", stats.Durability);
+        yield return ("Poder", stats.Power);
+        yield return ("Combate", stats.Combat);
+    }
+
+    private static string GetAlignmentBadgeClass(string? alignment) =>
+        alignment?.ToLowerInvariant() switch
+        {
+            "good" => "bg-success",
+            "bad" => "bg-danger",
+            "neutral" => "bg-warning text-dark",
+            _ => "bg-secondary"
+        };
+
+    private static string FormatValue(string? value) =>
+        string.IsNullOrWhiteSpace(value) || value is "-" or "null" ? "N/A" : value;
+
+    private static string FormatList(List<string>? values) =>
+        values is { Count: > 0 }
+            ? string.Join(", ", values.Where(v => !string.IsNullOrWhiteSpace(v) && v != "-"))
+            : "N/A";
+
+    public void Dispose()
+    {
+        requestCts?.Cancel();
+        requestCts?.Dispose();
+    }
+}
